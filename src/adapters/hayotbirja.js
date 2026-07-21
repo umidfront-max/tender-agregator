@@ -51,36 +51,72 @@ function idempotencyKey() {
   return `${Date.now()}-${idemSeq++}`
 }
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+
+// --- Global navbat (throttle) ---
+// 5 ta bo'lim bir vaqtda ko'p so'rov yuborsa backend HTTP 429 beradi.
+// Shu sabab BARCHA Hayotbirja so'rovlarini bitta navbatga qo'yamiz va
+// har biri orasida MIN_GAP kutamiz — bir vaqtda faqat bitta so'rov ketadi.
+const MIN_GAP = 350 // ms
+let queueTail = Promise.resolve()
+function enqueue(task) {
+  const result = queueTail.then(task)
+  // keyingi so'rov shu tugab + gap kutgach boshlanadi (xato bo'lsa ham)
+  queueTail = result.then(
+    () => sleep(MIN_GAP),
+    () => sleep(MIN_GAP)
+  )
+  return result
+}
+
 function toNum(v) {
   if (typeof v === 'number') return v
   const n = Number(v)
   return Number.isFinite(n) ? n : null
 }
 
-// Bitta sahifani (max 100 ta) o'qish.
+// Bitta sahifani (max 100 ta) o'qish — navbat orqali + 429 da qayta urinish.
 async function fetchPage(cfg, { limit, offset, signal }) {
-  const data = await postJson(`${BASE}/rpc`, {
-    headers: {
-      accept: '*/*',
-      'x-dbrpc-language': 'uz_UZ@latin',
-      'x-idempotency-key': idempotencyKey(),
-      'x-url-on': 'https://hayotbirja.uz/procedure/tender',
+  const body = {
+    id: rpcId++,
+    jsonrpc: '2.0',
+    method: 'ref',
+    params: {
+      ref: cfg.ref,
+      op: 'read',
+      limit,
+      offset,
+      filters: cfg.filters || {},
+      fields: FIELDS_BY_KIND[cfg.kind] || PROC_FIELDS,
     },
-    body: {
-      id: rpcId++,
-      jsonrpc: '2.0',
-      method: 'ref',
-      params: {
-        ref: cfg.ref,
-        op: 'read',
-        limit,
-        offset,
-        filters: cfg.filters || {},
-        fields: FIELDS_BY_KIND[cfg.kind] || PROC_FIELDS,
-      },
-    },
-    signal,
-  })
+  }
+
+  const MAX_RETRY = 5
+  let data
+  for (let attempt = 0; ; attempt++) {
+    try {
+      data = await enqueue(() =>
+        postJson(`${BASE}/rpc`, {
+          headers: {
+            accept: '*/*',
+            'x-dbrpc-language': 'uz_UZ@latin',
+            'x-idempotency-key': idempotencyKey(),
+            'x-url-on': 'https://hayotbirja.uz/procedure/tender',
+          },
+          body,
+          signal,
+        })
+      )
+      break
+    } catch (e) {
+      // Rate-limit (429) -> eksponensial kutib qayta urinamiz.
+      if (e?.status === 429 && attempt < MAX_RETRY && !signal?.aborted) {
+        await sleep(1000 * 2 ** attempt) // 1s, 2s, 4s, 8s, 16s
+        continue
+      }
+      throw e
+    }
+  }
 
   if (data?.error) {
     const msg = data.error.message || data.error.code || 'xato'

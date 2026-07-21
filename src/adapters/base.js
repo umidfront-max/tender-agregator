@@ -56,7 +56,9 @@ export async function postJson(url, { body, headers = {}, signal } = {}) {
     signal,
   })
   if (!res.ok) {
-    throw new Error(`HTTP ${res.status} (${url})`)
+    const err = new Error(`HTTP ${res.status} (${url})`)
+    err.status = res.status
+    throw err
   }
   return res.json()
 }
