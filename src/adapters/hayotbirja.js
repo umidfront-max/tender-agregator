@@ -2,52 +2,63 @@ import { createTender, postJson } from './base.js'
 
 // Hayotbirja — JSON-RPC 2.0 API.
 // POST https://api.hayotbirja.uz/rpc
-// Body: { id, jsonrpc: "2.0", method: "ref", params: { ref, op, ... } }
+// Body: { id, jsonrpc: "2.0", method: "ref", params: { ref, op: "read", ... } }
 //
-// Tenderlar ro'yxati "ref" metodi orqali "ref_tender_public" spravochnigidan
-// o'qiladi (op: "read"). Aynan sayt yuboradigan so'rov.
+// Saytdagi har bir bo'lim (Tender, Tanlash, Do'kon, ...) alohida "ref"
+// spravochnigi orqali o'qiladi. Shu sabab har birini ALOHIDA manba (adapter)
+// qilib chiqaramiz — UI'da alohida filtr/chip bo'lib ko'rinadi.
 
 // Dev'da  -> Vite proxy (/proxy/hayotbirja/rpc)
 // Prod'da -> Vercel serverless proxy (/api/hayotbirja/rpc)
-// Ikkalasi ham `${BASE}/rpc` shakliga tushadi.
-const BASE = import.meta.env.DEV
-  ? '/proxy/hayotbirja'
-  : '/api/hayotbirja'
-
-// Sayt qaytaradigan aniq maydonlar ro'yxati (fields).
-const TENDER_FIELDS = [
-  'green',
-  'id',
-  'publicated_at',
-  'status',
-  'name',
-  'good_count',
-  'close_at',
-  'totalcost',
-  'currency',
-  'lang',
-  'part_count',
-  'meta',
-  'remain_time',
-  'lot_count',
-  'docs_objections_remain_time',
-  'close_docs_objections_at',
-]
+const BASE = import.meta.env.DEV ? '/proxy/hayotbirja' : '/api/hayotbirja'
 
 // Backend bitta so'rovda limit'ni 100 tada cheklaydi ("limit <= 100").
-// Shu sabab ko'proq kerak bo'lsa — 100 tadan sahifalab olamiz.
 const PAGE_SIZE = 100
 
+// Maydonlar to'plamlari (ref turiga qarab).
+const PROC_FIELDS = [
+  'green', 'id', 'publicated_at', 'status', 'name', 'good_count', 'close_at',
+  'totalcost', 'currency', 'lang', 'part_count', 'meta', 'remain_time',
+  'lot_count', 'docs_objections_remain_time', 'close_docs_objections_at',
+]
+const MASTER_FIELDS = [
+  'green', 'id', 'publicated_at', 'status', 'name', 'good_count', 'close_at',
+  'totalcost', 'currency', 'lang', 'part_count', 'meta',
+]
+const SHOP_FIELDS = [
+  'id', 'publicated_at', 'status', 'name', 'price', 'close_at', 'totalcost',
+  'currency', 'amount', 'min_amount', 'product_name', 'remain_time', 'meta',
+]
+
+// Har bir manba (saytdagi tab) konfiguratsiyasi.
+// kind: 'proc' | 'master' | 'shop' — mapping va fields shunga qarab tanlanadi.
+const SOURCES = [
+  { id: 'hb-tender',    name: 'Hayotbirja · Tender',        ref: 'ref_tender_public',          filters: {},                                    kind: 'proc' },
+  { id: 'hb-selection', name: 'Hayotbirja · Tanlash',       ref: 'ref_selection_public',       filters: {},                                    kind: 'proc' },
+  { id: 'hb-master',    name: 'Hayotbirja · Hadli kelishuv', ref: 'ref_master_agreement_public', filters: {},                                   kind: 'master' },
+  { id: 'hb-shop',      name: 'Hayotbirja · Do‘kon',        ref: 'ref_online_shop_public',     filters: { is_national: false, is_gos_shop: true }, kind: 'shop' },
+  { id: 'hb-nshop',     name: 'Hayotbirja · Milliy do‘kon', ref: 'ref_online_shop_public',     filters: { is_national: true,  is_gos_shop: true }, kind: 'shop' },
+  // TODO: Auksion (reduction) va Mahalliy auksion (local_reduction) —
+  //       to'g'ri "ref" nomi aniqlangach shu yerga qo'shiladi.
+]
+
+const FIELDS_BY_KIND = { proc: PROC_FIELDS, master: MASTER_FIELDS, shop: SHOP_FIELDS }
+
 let rpcId = 1
-// Har bir so'rov uchun UNIKAL idempotency-key kerak, aks holda backend
-// "Duplicate request" qaytaradi (bir ms ichida bir nechta so'rov ketishi mumkin).
+// Har bir so'rovga UNIKAL idempotency-key — aks holda backend "Duplicate request".
 let idemSeq = 0
 function idempotencyKey() {
   return `${Date.now()}-${idemSeq++}`
 }
 
+function toNum(v) {
+  if (typeof v === 'number') return v
+  const n = Number(v)
+  return Number.isFinite(n) ? n : null
+}
+
 // Bitta sahifani (max 100 ta) o'qish.
-async function fetchPage({ limit, offset, signal }) {
+async function fetchPage(cfg, { limit, offset, signal }) {
   const data = await postJson(`${BASE}/rpc`, {
     headers: {
       accept: '*/*',
@@ -60,40 +71,42 @@ async function fetchPage({ limit, offset, signal }) {
       jsonrpc: '2.0',
       method: 'ref',
       params: {
-        ref: 'ref_tender_public',
+        ref: cfg.ref,
         op: 'read',
         limit,
         offset,
-        fields: TENDER_FIELDS,
+        filters: cfg.filters || {},
+        fields: FIELDS_BY_KIND[cfg.kind] || PROC_FIELDS,
       },
     },
     signal,
   })
 
   if (data?.error) {
-    throw new Error(`Hayotbirja RPC: ${data.error.message || 'xato'}`)
+    const msg = data.error.message || data.error.code || 'xato'
+    throw new Error(`Hayotbirja RPC (${cfg.ref}): ${msg}`)
   }
 
-  // JSON-RPC natijasi turli shaklda bo'lishi mumkin:
-  // result: [...]  yoki  result: { data: [...] }  yoki  result: { items: [...] }
   const result = data?.result
   return Array.isArray(result)
     ? result
     : result?.data ?? result?.items ?? result?.list ?? []
 }
 
-function toTender(r) {
+// Bitta yozuvni umumiy Tender modeliga aylantirish.
+function toTender(cfg, r) {
   const meta = r.meta && typeof r.meta === 'object' ? r.meta : {}
+  const isShop = cfg.kind === 'shop'
   return createTender({
-    sourceId: 'hayotbirja',
-    sourceName: 'Hayotbirja',
+    sourceId: cfg.id,
+    sourceName: cfg.name,
     externalId: r.id,
-    title: r.name,
-    cost: typeof r.totalcost === 'number' ? r.totalcost : Number(r.totalcost) || null,
+    // Do'konda `name` ko'pincha bo'sh — mahsulot nomini ko'rsatamiz.
+    title: isShop ? (r.product_name || r.name) : (r.name || r.product_name),
+    cost: isShop ? (toNum(r.price) ?? toNum(r.totalcost)) : toNum(r.totalcost),
     currency: r.currency || 'UZS',
     startDate: r.publicated_at ?? null,
     endDate: r.close_at ?? null,
-    // seller/region alohida maydon sifatida kelmaydi — meta ichida bo'lishi mumkin
     seller: meta.organizer_name ?? meta.customer_name ?? meta.seller ?? null,
     region: meta.delivery_region ?? meta.region ?? null,
     url: r.id ? `https://hayotbirja.uz/procedure/${r.id}/core` : null,
@@ -101,29 +114,35 @@ function toTender(r) {
   })
 }
 
-export default {
-  id: 'hayotbirja',
-  name: 'Hayotbirja',
+// Konfiguratsiyadan to'liq adapter yasovchi fabrika.
+function makeAdapter(cfg) {
+  return {
+    id: cfg.id,
+    name: cfg.name,
 
-  async fetchTenders({ from = 1, to = 100, signal } = {}) {
-    // from/to — 1-based, inclusive diapazon.  from:1, to:5000 -> 5000 ta so'raladi.
-    const startOffset = Math.max(0, from - 1)
-    const want = Math.max(1, to - from + 1)
+    async fetchTenders({ from = 1, to = 100, signal } = {}) {
+      // from/to — 1-based, inclusive.  from:1, to:5000 -> 5000 ta so'raladi.
+      const want = Math.max(1, to - from + 1)
+      let offset = Math.max(0, from - 1)
+      const all = []
 
-    const all = []
-    let offset = startOffset
+      // Kerakli songa yetguncha yoki ma'lumot tugaguncha 100 tadan olamiz.
+      while (all.length < want) {
+        if (signal?.aborted) break
+        const limit = Math.min(PAGE_SIZE, want - all.length)
+        const rows = await fetchPage(cfg, { limit, offset, signal })
+        all.push(...rows)
+        if (rows.length < limit) break // to'liq sahifadan kam -> tugadi
+        offset += rows.length
+      }
 
-    // Kerakli songa yetguncha yoki tenderlar tugaguncha 100 tadan olamiz.
-    while (all.length < want) {
-      if (signal?.aborted) break
-      const limit = Math.min(PAGE_SIZE, want - all.length)
-      const rows = await fetchPage({ limit, offset, signal })
-      all.push(...rows)
-      // To'liq sahifadan kam qaytdi -> boshqa ma'lumot qolmadi, to'xtaymiz.
-      if (rows.length < limit) break
-      offset += rows.length
-    }
-
-    return all.map(toTender)
-  },
+      return all.map((r) => toTender(cfg, r))
+    },
+  }
 }
+
+// Har bir bo'lim uchun alohida adapter.
+export const hayotbirjaAdapters = SOURCES.map(makeAdapter)
+
+// Orqaga moslik uchun — birinchisi (Tender) default eksport.
+export default hayotbirjaAdapters[0]
