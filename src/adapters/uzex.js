@@ -7,9 +7,11 @@ import { createTender, postJson } from './base.js'
 // va vaqt o'tishi bilan eskiradi. Uni brauzer DevTools'dan olib,
 // VITE_UZEX_VALIDATION orqali beriladi (pastdagi .env ga qarang).
 
-const BASE = import.meta.env.DEV
-  ? '/proxy/uzex' // dev: Vite proxy orqali (CORS uchun)
-  : 'https://apietender.uzex.uz' // prod: o'z backend proxy'ingiz manzili bilan almashtiring
+// Dev'da  -> Vite proxy (/proxy/uzex/api/common/TradeList)
+// Prod'da -> Vercel serverless proxy (/api/uzex)
+const ENDPOINT = import.meta.env.DEV
+  ? '/proxy/uzex/api/common/TradeList'
+  : '/api/uzex'
 
 const VALIDATION = import.meta.env.VITE_UZEX_VALIDATION || ''
 
@@ -18,7 +20,7 @@ export default {
   name: 'UZEX e-Tender',
 
   async fetchTenders({ from = 1, to = 20, signal } = {}) {
-    const data = await postJson(`${BASE}/api/common/TradeList`, {
+    const data = await postJson(ENDPOINT, {
       headers: {
         accept: 'application/json',
         language: 'uzb',
