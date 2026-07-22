@@ -43,6 +43,34 @@ const SOURCES = [
     },
   },
   {
+    id: 'eb-selection',
+    name: 'E-Birja · Tanlash',
+    category: 'tanlash',
+    kind: 'tender',
+    path: 'tender-v2/producer/landing-lots',
+    baseQuery: () => {
+      const p = new URLSearchParams({ type: '2' })
+      p.append('state[]', '50')
+      return p
+    },
+  },
+  {
+    id: 'eb-auction',
+    name: 'E-Birja · Auksion',
+    category: 'auksion',
+    kind: 'auction',
+    path: 'auction/auction/active',
+    baseQuery: () => new URLSearchParams({ auction_type: '1' }),
+  },
+  {
+    id: 'eb-local-auction',
+    name: 'E-Birja · Mahalliy auksion',
+    category: 'mahalliy-auksion',
+    kind: 'auction',
+    path: 'auction/auction/active',
+    baseQuery: () => new URLSearchParams({ auction_type: '2', state: '50' }),
+  },
+  {
     id: 'eb-shop',
     name: 'E-Birja · Do‘kon',
     category: 'dokon',
@@ -108,8 +136,35 @@ function shopToTender(cfg, r) {
   })
 }
 
+// Auksion yozuvi -> umumiy model (struktura tender/do'kondan farq qiladi).
+function auctionToTender(cfg, r) {
+  const region = r.region?.title_uz ?? r.company?.region?.title_uz
+  const district = r.district?.title_uz ?? r.company?.district?.title_uz
+  return createTender({
+    sourceId: cfg.id,
+    sourceName: cfg.name,
+    externalId: r.id,
+    title: r.title,
+    // Auksionda joriy narx ko'rsatiladi (bo'lmasa boshlang'ich summa).
+    cost: toNum(r.current_price) ?? toNum(r.total_sum),
+    currency: 'UZS',
+    startDate: normDate(r.begin_date),
+    endDate: normDate(r.auction_end),
+    seller: r.company?.title ?? null,
+    region: [region, district].filter(Boolean).join(', ') || null,
+    url: r.id ? `https://ebirja.uz/uz/auction/${r.id}` : null,
+    raw: r,
+  })
+}
+
+const MAPPERS = {
+  tender: tenderToTender,
+  shop: shopToTender,
+  auction: auctionToTender,
+}
+
 function makeAdapter(cfg) {
-  const mapRow = cfg.kind === 'tender' ? tenderToTender : shopToTender
+  const mapRow = MAPPERS[cfg.kind] || tenderToTender
   return {
     id: cfg.id,
     name: cfg.name,

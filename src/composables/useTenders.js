@@ -10,8 +10,9 @@ const PLATFORM_LABELS = {
 // Kategoriya nomlari va tartibi (pastdagi filtr).
 const CATEGORY_LABELS = {
   tender: 'Tender',
-  auksion: 'Auksion',
   tanlash: 'Tanlash',
+  auksion: 'Auksion',
+  'mahalliy-auksion': 'Mahalliy auksion',
   dokon: "Do'kon",
   'milliy-dokon': "Milliy do'kon",
   'hadli-kelishuv': 'Hadli kelishuv',
