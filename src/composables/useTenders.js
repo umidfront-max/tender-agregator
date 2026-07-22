@@ -1,92 +1,148 @@
-import { ref, computed, reactive } from 'vue'
+import { ref, computed, reactive, watch } from 'vue'
 import { adapters } from '../adapters/index.js'
 
-export function useTenders() {
+// Platforma nomlari (tepadagi filtr).
+const PLATFORM_LABELS = {
+  hayotbirja: 'Hayotbirja',
+  uzex: 'UZEX',
+}
+// Kategoriya nomlari va tartibi (pastdagi filtr).
+const CATEGORY_LABELS = {
+  tender: 'Tender',
+  auksion: 'Auksion',
+  tanlash: 'Tanlash',
+  dokon: "Do'kon",
+  'milliy-dokon': "Milliy do'kon",
+  'hadli-kelishuv': 'Hadli kelishuv',
+}
+const CATEGORY_ORDER = Object.keys(CATEGORY_LABELS)
+
+export function useTenders({ perSource = 300 } = {}) {
   const tenders = ref([])
   const loading = ref(false)
 
-  // Har bir manba uchun alohida holat — biri ishlamay qolsa,
-  // qolganlari baribir ko'rsatiladi.
+  // Har bir manba uchun alohida holat.
   const sources = reactive(
     adapters.map((a) => ({
       id: a.id,
       name: a.name,
+      platform: a.platform,
+      category: a.category,
       status: 'idle', // idle | loading | ok | error
       count: 0,
       error: null,
-      enabled: true,
     }))
+  )
+
+  // Mavjud platformalar va kategoriyalar (faqat adapteri borlar).
+  const platforms = [...new Set(adapters.map((a) => a.platform))].map((id) => ({
+    id,
+    name: PLATFORM_LABELS[id] || id,
+  }))
+  const categories = CATEGORY_ORDER.filter((c) =>
+    adapters.some((a) => a.category === c)
+  ).map((id) => ({ id, name: CATEGORY_LABELS[id] || id }))
+
+  // Tanlov holati — default: barcha platforma, faqat "tender" kategoriya.
+  const selectedPlatforms = ref(new Set(platforms.map((p) => p.id)))
+  const selectedCategories = ref(new Set(['tender']))
+
+  // Tanlangan filtrlarga mos adapterlar.
+  const activeAdapters = computed(() =>
+    adapters.filter(
+      (a) =>
+        selectedPlatforms.value.has(a.platform) &&
+        selectedCategories.value.has(a.category)
+    )
   )
 
   let controller = null
 
-  async function fetchAll({ perSource = 5000 } = {}) {
-    // avvalgi so'rovni bekor qilish
+  async function fetchActive() {
     if (controller) controller.abort()
     controller = new AbortController()
     const { signal } = controller
 
+    const active = activeAdapters.value
     loading.value = true
     tenders.value = []
 
-    const active = adapters.filter((a) => {
-      const s = sources.find((x) => x.id === a.id)
-      return s?.enabled
-    })
-
-    active.forEach((a) => {
-      const s = sources.find((x) => x.id === a.id)
-      s.status = 'loading'
+    // Holatlarni tiklash.
+    sources.forEach((s) => {
+      const on = active.some((a) => a.id === s.id)
+      s.status = on ? 'loading' : 'idle'
       s.error = null
       s.count = 0
     })
 
-    const results = await Promise.allSettled(
-      active.map((a) =>
-        a.fetchTenders({ from: 1, to: perSource, signal })
-      )
+    await Promise.all(
+      active.map(async (a) => {
+        const s = sources.find((x) => x.id === a.id)
+        try {
+          await a.fetchTenders({
+            from: 1,
+            to: perSource,
+            signal,
+            // Har sahifa kelishi bilan darhol ro'yxatga qo'shamiz.
+            onBatch: (rows) => {
+              if (signal.aborted) return
+              tenders.value.push(...rows)
+              s.count += rows.length
+              s.status = 'ok'
+            },
+          })
+          if (!signal.aborted) s.status = 'ok'
+        } catch (e) {
+          if (e?.name === 'AbortError' || signal.aborted) return
+          s.status = 'error'
+          s.error = e?.message || 'Noma\'lum xato'
+        }
+      })
     )
 
-    const merged = []
-    results.forEach((res, i) => {
-      const a = active[i]
-      const s = sources.find((x) => x.id === a.id)
-      if (res.status === 'fulfilled') {
-        s.status = 'ok'
-        s.count = res.value.length
-        merged.push(...res.value)
-      } else {
-        if (res.reason?.name === 'AbortError') return
-        s.status = 'error'
-        s.error = res.reason?.message || 'Noma\'lum xato'
-      }
-    })
-
-    tenders.value = merged
-    loading.value = false
+    if (!signal.aborted) loading.value = false
   }
 
-  function toggleSource(id) {
-    const s = sources.find((x) => x.id === id)
-    if (s) s.enabled = !s.enabled
+  function togglePlatform(id) {
+    const set = new Set(selectedPlatforms.value)
+    set.has(id) ? set.delete(id) : set.add(id)
+    if (set.size === 0) set.add(id) // kamida bittasi tanlangan bo'lsin
+    selectedPlatforms.value = set
   }
 
-  return { tenders, loading, sources, fetchAll, toggleSource }
+  function toggleCategory(id) {
+    const set = new Set(selectedCategories.value)
+    set.has(id) ? set.delete(id) : set.add(id)
+    if (set.size === 0) set.add(id)
+    selectedCategories.value = set
+  }
+
+  // Filtr o'zgarganda — faqat kerakli manbalarni qayta yuklaymiz.
+  watch(activeAdapters, () => fetchActive())
+
+  return {
+    tenders,
+    loading,
+    sources,
+    platforms,
+    categories,
+    selectedPlatforms,
+    selectedCategories,
+    togglePlatform,
+    toggleCategory,
+    refresh: fetchActive,
+  }
 }
 
 // Filtrlash + saralash (UI'da ishlatiladi)
 export function useTenderView(tenders) {
   const query = ref('')
   const sortBy = ref('endDate') // endDate | cost | title
-  const activeSources = ref(new Set())
 
   const filtered = computed(() => {
     const q = query.value.trim().toLowerCase()
     let list = tenders.value
 
-    if (activeSources.value.size > 0) {
-      list = list.filter((t) => activeSources.value.has(t.sourceId))
-    }
     if (q) {
       list = list.filter(
         (t) =>
@@ -112,5 +168,5 @@ export function useTenderView(tenders) {
     return sorted
   })
 
-  return { query, sortBy, activeSources, filtered }
+  return { query, sortBy, filtered }
 }

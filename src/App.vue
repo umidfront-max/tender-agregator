@@ -1,19 +1,28 @@
 <script setup>
-import { onMounted } from 'vue'
+import { onMounted, computed } from 'vue'
 import { useTenders, useTenderView } from './composables/useTenders.js'
 import TenderCard from './components/TenderCard.vue'
 
-const { tenders, loading, sources, fetchAll, toggleSource } = useTenders()
-const { query, sortBy, activeSources, filtered } = useTenderView(tenders)
+const {
+  tenders,
+  loading,
+  sources,
+  platforms,
+  categories,
+  selectedPlatforms,
+  selectedCategories,
+  togglePlatform,
+  toggleCategory,
+  refresh,
+} = useTenders()
+const { query, sortBy, filtered } = useTenderView(tenders)
 
-onMounted(() => fetchAll())
+// Xato bo'lgan (va hozir tanlangan) manbalar.
+const erroredSources = computed(() =>
+  sources.filter((s) => s.status === 'error')
+)
 
-function toggleFilter(id) {
-  if (activeSources.value.has(id)) activeSources.value.delete(id)
-  else activeSources.value.add(id)
-  // reaktivlik uchun yangi Set
-  activeSources.value = new Set(activeSources.value)
-}
+onMounted(() => refresh())
 </script>
 
 <template>
@@ -26,35 +35,65 @@ function toggleFilter(id) {
           <p>Bir nechta e-tender platformasi — bitta oynada</p>
         </div>
       </div>
-      <button class="refresh" :disabled="loading" @click="fetchAll()">
+      <button class="refresh" :disabled="loading" @click="refresh()">
         <span v-if="loading" class="spin" aria-hidden="true"></span>
         {{ loading ? 'Yuklanmoqda…' : 'Yangilash' }}
       </button>
     </header>
 
-    <!-- Manba holati -->
-    <section class="sources">
-      <button
-        v-for="s in sources"
+    <!-- 1-daraja: Platformalar -->
+    <section class="filter-row">
+      <span class="filter-label">Platforma</span>
+      <div class="tabs">
+        <button
+          v-for="p in platforms"
+          :key="p.id"
+          class="tab"
+          :class="{ active: selectedPlatforms.has(p.id) }"
+          @click="togglePlatform(p.id)"
+        >
+          {{ p.name }}
+        </button>
+      </div>
+    </section>
+
+    <!-- 2-daraja: Kategoriyalar -->
+    <section class="filter-row">
+      <span class="filter-label">Kategoriya</span>
+      <div class="tabs">
+        <button
+          v-for="c in categories"
+          :key="c.id"
+          class="tab cat"
+          :class="{ active: selectedCategories.has(c.id) }"
+          @click="toggleCategory(c.id)"
+        >
+          {{ c.name }}
+        </button>
+      </div>
+    </section>
+
+    <!-- Tanlangan manbalarning yuklanish holati -->
+    <section class="sources" v-if="sources.some((s) => s.status !== 'idle')">
+      <span
+        v-for="s in sources.filter((x) => x.status !== 'idle')"
         :key="s.id"
         class="src"
-        :class="[s.status, { off: !s.enabled }]"
-        @click="toggleSource(s.id)"
-        :title="s.enabled ? 'O\'chirish uchun bosing' : 'Yoqish uchun bosing'"
+        :class="s.status"
       >
         <span class="dot" :class="s.status"></span>
         <span class="src-name">{{ s.name }}</span>
-        <span v-if="s.status === 'ok'" class="src-count">{{ s.count }}</span>
+        <span v-if="s.count" class="src-count">{{ s.count }}</span>
         <span v-else-if="s.status === 'error'" class="src-err">xato</span>
-      </button>
+      </span>
     </section>
 
     <!-- Xato bo'lgan manbalar tafsiloti -->
-    <div v-for="s in sources.filter((x) => x.status === 'error')" :key="s.id + '-e'" class="banner">
+    <div v-for="s in erroredSources" :key="s.id + '-e'" class="banner">
       <strong>{{ s.name }}</strong> yuklanmadi: {{ s.error }}
     </div>
 
-    <!-- Filtr paneli -->
+    <!-- Qidiruv + saralash -->
     <section class="controls">
       <input
         v-model="query"
@@ -62,17 +101,6 @@ function toggleFilter(id) {
         type="search"
         placeholder="Nomi, buyurtmachi yoki hudud bo'yicha qidirish…"
       />
-      <div class="chips">
-        <button
-          v-for="s in sources"
-          :key="s.id + '-f'"
-          class="chip"
-          :class="{ active: activeSources.has(s.id) }"
-          @click="toggleFilter(s.id)"
-        >
-          {{ s.name }}
-        </button>
-      </div>
       <select v-model="sortBy" class="sort">
         <option value="endDate">Muddat bo'yicha</option>
         <option value="cost">Summa bo'yicha</option>
@@ -81,7 +109,8 @@ function toggleFilter(id) {
     </section>
 
     <div class="count-line">
-      <span>{{ filtered.length }}</span> ta tender ko'rsatilmoqda
+      <span>{{ filtered.length }}</span> ta natija
+      <span v-if="loading" class="loading-hint">— yuklanmoqda…</span>
     </div>
 
     <!-- Ro'yxat -->
@@ -146,7 +175,46 @@ function toggleFilter(id) {
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-.sources { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 16px; }
+/* Ikki bosqichli filtr */
+.filter-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.filter-label {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-faint);
+  min-width: 78px;
+}
+.tabs { display: flex; flex-wrap: wrap; gap: 8px; }
+.tab {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  transition: all 0.15s;
+}
+.tab:hover { border-color: var(--accent); color: var(--text); }
+.tab.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #1a1206;
+}
+.tab.cat {
+  border-radius: 20px;
+  font-weight: 500;
+  padding: 7px 14px;
+  font-size: 13px;
+}
+.tab.cat.active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+
+.sources { display: flex; flex-wrap: wrap; gap: 10px; margin: 8px 0 16px; }
 .src {
   display: flex; align-items: center; gap: 8px;
   background: var(--bg-panel);
@@ -157,7 +225,6 @@ function toggleFilter(id) {
   font-size: 13px;
   transition: opacity 0.15s, border-color 0.15s;
 }
-.src.off { opacity: 0.4; }
 .src:hover { border-color: var(--border); }
 .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-faint); }
 .dot.ok { background: var(--ok); }
@@ -204,18 +271,6 @@ function toggleFilter(id) {
 .search:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 .search::placeholder { color: var(--text-faint); }
 
-.chips { display: flex; gap: 8px; }
-.chip {
-  background: transparent;
-  border: 1px solid var(--border);
-  color: var(--text-dim);
-  padding: 8px 14px;
-  border-radius: 20px;
-  font-size: 13px;
-  transition: all 0.15s;
-}
-.chip.active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
-
 .sort {
   background: var(--bg-panel);
   border: 1px solid var(--border);
@@ -231,6 +286,7 @@ function toggleFilter(id) {
   margin: 14px 2px;
 }
 .count-line span { color: var(--text); font-weight: 600; font-family: var(--font-mono); }
+.count-line .loading-hint { color: var(--loading); font-weight: 500; font-family: inherit; }
 
 .grid {
   display: grid;

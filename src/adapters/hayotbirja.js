@@ -33,11 +33,11 @@ const SHOP_FIELDS = [
 // Har bir manba (saytdagi tab) konfiguratsiyasi.
 // kind: 'proc' | 'master' | 'shop' — mapping va fields shunga qarab tanlanadi.
 const SOURCES = [
-  { id: 'hb-tender',    name: 'Hayotbirja · Tender',        ref: 'ref_tender_public',          filters: {},                                    kind: 'proc' },
-  { id: 'hb-selection', name: 'Hayotbirja · Tanlash',       ref: 'ref_selection_public',       filters: {},                                    kind: 'proc' },
-  { id: 'hb-master',    name: 'Hayotbirja · Hadli kelishuv', ref: 'ref_master_agreement_public', filters: {},                                   kind: 'master' },
-  { id: 'hb-shop',      name: 'Hayotbirja · Do‘kon',        ref: 'ref_online_shop_public',     filters: { is_national: false, is_gos_shop: true }, kind: 'shop' },
-  { id: 'hb-nshop',     name: 'Hayotbirja · Milliy do‘kon', ref: 'ref_online_shop_public',     filters: { is_national: true,  is_gos_shop: true }, kind: 'shop' },
+  { id: 'hb-tender',    name: 'Hayotbirja · Tender',        category: 'tender',        ref: 'ref_tender_public',          filters: {},                                    kind: 'proc' },
+  { id: 'hb-selection', name: 'Hayotbirja · Tanlash',       category: 'tanlash',       ref: 'ref_selection_public',       filters: {},                                    kind: 'proc' },
+  { id: 'hb-master',    name: 'Hayotbirja · Hadli kelishuv', category: 'hadli-kelishuv', ref: 'ref_master_agreement_public', filters: {},                                  kind: 'master' },
+  { id: 'hb-shop',      name: 'Hayotbirja · Do‘kon',        category: 'dokon',         ref: 'ref_online_shop_public',     filters: { is_national: false, is_gos_shop: true }, kind: 'shop' },
+  { id: 'hb-nshop',     name: 'Hayotbirja · Milliy do‘kon', category: 'milliy-dokon',  ref: 'ref_online_shop_public',     filters: { is_national: true,  is_gos_shop: true }, kind: 'shop' },
   // TODO: Auksion (reduction) va Mahalliy auksion (local_reduction) —
   //       to'g'ri "ref" nomi aniqlangach shu yerga qo'shiladi.
 ]
@@ -155,24 +155,29 @@ function makeAdapter(cfg) {
   return {
     id: cfg.id,
     name: cfg.name,
+    platform: 'hayotbirja',
+    category: cfg.category,
 
-    async fetchTenders({ from = 1, to = 100, signal } = {}) {
+    async fetchTenders({ from = 1, to = 100, signal, onBatch } = {}) {
       // from/to — 1-based, inclusive.  from:1, to:5000 -> 5000 ta so'raladi.
       const want = Math.max(1, to - from + 1)
       let offset = Math.max(0, from - 1)
       const all = []
 
       // Kerakli songa yetguncha yoki ma'lumot tugaguncha 100 tadan olamiz.
+      // Har sahifa kelishi bilan darhol UI'ga uzatamiz (onBatch).
       while (all.length < want) {
         if (signal?.aborted) break
         const limit = Math.min(PAGE_SIZE, want - all.length)
         const rows = await fetchPage(cfg, { limit, offset, signal })
-        all.push(...rows)
+        const mapped = rows.map((r) => toTender(cfg, r))
+        all.push(...mapped)
+        if (onBatch && mapped.length && !signal?.aborted) onBatch(mapped)
         if (rows.length < limit) break // to'liq sahifadan kam -> tugadi
         offset += rows.length
       }
 
-      return all.map((r) => toTender(cfg, r))
+      return all
     },
   }
 }

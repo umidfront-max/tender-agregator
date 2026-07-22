@@ -18,8 +18,10 @@ const VALIDATION = import.meta.env.VITE_UZEX_VALIDATION || ''
 export default {
   id: 'uzex',
   name: 'UZEX e-Tender',
+  platform: 'uzex',
+  category: 'tender',
 
-  async fetchTenders({ from = 1, to = 20, signal } = {}) {
+  async fetchTenders({ from = 1, to = 20, signal, onBatch } = {}) {
     const data = await postJson(ENDPOINT, {
       headers: {
         accept: 'application/json',
@@ -33,7 +35,7 @@ export default {
     // Javob to'g'ridan-to'g'ri massiv yoki { data: [...] } bo'lishi mumkin
     const rows = Array.isArray(data) ? data : data?.data ?? []
 
-    return rows.map((r) =>
+    const mapped = rows.map((r) =>
       createTender({
         sourceId: 'uzex',
         sourceName: 'UZEX e-Tender',
@@ -49,5 +51,9 @@ export default {
         raw: r,
       })
     )
+
+    // Kelgan ma'lumotni darhol UI'ga uzatamiz.
+    if (onBatch && mapped.length) onBatch(mapped)
+    return mapped
   },
 }
