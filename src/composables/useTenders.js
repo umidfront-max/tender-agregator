@@ -112,11 +112,9 @@ export function useTenders({ perSource = 300 } = {}) {
     selectedPlatforms.value = set
   }
 
+  // Kategoriya — bittalik tanlov (tab kabi): faqat bitta kategoriya ko'rinadi.
   function toggleCategory(id) {
-    const set = new Set(selectedCategories.value)
-    set.has(id) ? set.delete(id) : set.add(id)
-    if (set.size === 0) set.add(id)
-    selectedCategories.value = set
+    selectedCategories.value = new Set([id])
   }
 
   // Filtr o'zgarganda — faqat kerakli manbalarni qayta yuklaymiz.
