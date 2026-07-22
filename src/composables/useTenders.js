@@ -143,6 +143,18 @@ export function useTenderView(tenders) {
     const q = query.value.trim().toLowerCase()
     let list = tenders.value
 
+    // Muddati o'tganlarni (bugundan oldin tugagan) chiqarmaymiz.
+    // Sana yo'q bo'lsa — noaniq, ko'rsataveramiz.
+    const startOfToday = new Date()
+    startOfToday.setHours(0, 0, 0, 0)
+    const todayMs = startOfToday.getTime()
+    list = list.filter((t) => {
+      if (!t.endDate) return true
+      const end = new Date(t.endDate).getTime()
+      if (Number.isNaN(end)) return true
+      return end >= todayMs
+    })
+
     if (q) {
       list = list.filter(
         (t) =>

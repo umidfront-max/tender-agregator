@@ -25,6 +25,16 @@ function fmtDate(d) {
   })
 }
 
+// Muddat matni: boshlanish sanasi bo'lmasa faqat tugash sanasi ko'rsatiladi.
+const period = computed(() => {
+  const s = props.tender.startDate
+  const e = props.tender.endDate
+  if (s && e) return `${fmtDate(s)} — ${fmtDate(e)}`
+  if (e) return `${fmtDate(e)} gacha`
+  if (s) return `${fmtDate(s)} dan`
+  return '—'
+})
+
 const deadlineClass = computed(() => {
   const d = daysLeft.value
   if (d == null) return ''
@@ -66,7 +76,7 @@ const deadlineClass = computed(() => {
       </div>
       <div>
         <dt>Muddat</dt>
-        <dd>{{ fmtDate(tender.startDate) }} — {{ fmtDate(tender.endDate) }}</dd>
+        <dd>{{ period }}</dd>
       </div>
     </dl>
   </article>
