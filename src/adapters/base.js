@@ -47,6 +47,20 @@ export function createTender(partial) {
   }
 }
 
+// Kichik GET-JSON yordamchisi
+export async function getJson(url, { headers = {}, signal } = {}) {
+  const res = await fetch(url, {
+    headers: { accept: 'application/json', ...headers },
+    signal,
+  })
+  if (!res.ok) {
+    const err = new Error(`HTTP ${res.status} (${url})`)
+    err.status = res.status
+    throw err
+  }
+  return res.json()
+}
+
 // Kichik POST-JSON yordamchisi
 export async function postJson(url, { body, headers = {}, signal } = {}) {
   const res = await fetch(url, {

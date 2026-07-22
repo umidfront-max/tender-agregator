@@ -30,6 +30,16 @@ export default defineConfig({
           referer: 'https://hayotbirja.uz/',
         },
       },
+      '/proxy/ebirja': {
+        target: 'https://ebirja.uz',
+        changeOrigin: true,
+        // /proxy/ebirja/... -> https://ebirja.uz/api/proxy/...
+        rewrite: (path) => path.replace(/^\/proxy\/ebirja/, '/api/proxy'),
+        headers: {
+          origin: 'https://ebirja.uz',
+          referer: 'https://ebirja.uz/',
+        },
+      },
     },
   },
 })

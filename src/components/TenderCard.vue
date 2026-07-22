@@ -116,7 +116,8 @@ const deadlineClass = computed(() => {
   border-radius: 6px;
 }
 .source[data-source='uzex'] { color: #7dd3fc; border-color: #234b63; }
-.source[data-source='hayotbirja'] { color: #86efac; border-color: #22543d; }
+.source[data-source^='hb-'] { color: #86efac; border-color: #22543d; }
+.source[data-source^='eb-'] { color: #fcd34d; border-color: #5c4813; }
 
 .deadline {
   font-size: 12px;

@@ -5,6 +5,7 @@ import { adapters } from '../adapters/index.js'
 const PLATFORM_LABELS = {
   hayotbirja: 'Hayotbirja',
   uzex: 'UZEX',
+  ebirja: 'E-Birja',
 }
 // Kategoriya nomlari va tartibi (pastdagi filtr).
 const CATEGORY_LABELS = {
