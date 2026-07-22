@@ -1,0 +1,8 @@
+{
+  "rewrites": [
+    {
+      "source": "/api/ebirja/:path*",
+      "destination": "https://ebirja.uz/api/proxy/:path*"
+    }
+  ]
+}
