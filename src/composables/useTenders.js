@@ -138,6 +138,7 @@ export function useTenders({ perSource = 300 } = {}) {
 export function useTenderView(tenders) {
   const query = ref('')
   const sortBy = ref('endDate') // endDate | cost | title
+  const freshOnly = ref(false) // faqat so'nggi 24 soatda e'lon qilinganlar
 
   const filtered = computed(() => {
     const q = query.value.trim().toLowerCase()
@@ -154,6 +155,16 @@ export function useTenderView(tenders) {
       if (Number.isNaN(end)) return true
       return end >= todayMs
     })
+
+    // "Yangi e'lonlar" — so'nggi 24 soatda e'lon qilinganlar (startDate bo'yicha).
+    if (freshOnly.value) {
+      const dayAgo = Date.now() - 24 * 60 * 60 * 1000
+      list = list.filter((t) => {
+        if (!t.startDate) return false // e'lon sanasi yo'q -> aniqlab bo'lmaydi
+        const s = new Date(t.startDate).getTime()
+        return !Number.isNaN(s) && s >= dayAgo
+      })
+    }
 
     if (q) {
       list = list.filter(
@@ -180,5 +191,5 @@ export function useTenderView(tenders) {
     return sorted
   })
 
-  return { query, sortBy, filtered }
+  return { query, sortBy, freshOnly, filtered }
 }

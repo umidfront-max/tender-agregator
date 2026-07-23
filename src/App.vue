@@ -15,7 +15,7 @@ const {
   toggleCategory,
   refresh,
 } = useTenders()
-const { query, sortBy, filtered } = useTenderView(tenders)
+const { query, sortBy, freshOnly, filtered } = useTenderView(tenders)
 
 // Xato bo'lgan (va hozir tanlangan) manbalar.
 const erroredSources = computed(() =>
@@ -101,6 +101,14 @@ onMounted(() => refresh())
         type="search"
         placeholder="Nomi, buyurtmachi yoki hudud bo'yicha qidirish…"
       />
+      <button
+        class="fresh-btn"
+        :class="{ active: freshOnly }"
+        @click="freshOnly = !freshOnly"
+        title="So'nggi 24 soatda e'lon qilinganlar"
+      >
+        🆕 Yangi (24s)
+      </button>
       <select v-model="sortBy" class="sort">
         <option value="endDate">Muddat bo'yicha</option>
         <option value="cost">Summa bo'yicha</option>
@@ -270,6 +278,24 @@ onMounted(() => refresh())
 }
 .search:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 .search::placeholder { color: var(--text-faint); }
+
+.fresh-btn {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  transition: all 0.15s;
+}
+.fresh-btn:hover { border-color: var(--accent); color: var(--text); }
+.fresh-btn.active {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
 
 .sort {
   background: var(--bg-panel);
